@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slo-burn-rate-alerts"
+version = "0.1.0"
+description = "Generate Prometheus multi-window, multi-burn-rate SLO alerts from a short YAML spec"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Satya Prakash Chelluri" }]
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+sloburn = "sloburn.cli:main"
+
+[tool.setuptools]
+packages = ["sloburn"]

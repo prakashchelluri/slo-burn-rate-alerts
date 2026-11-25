@@ -1,0 +1,13 @@
+# Latency: a request is good if it completed within 300ms (histogram bucket le="0.3").
+service: checkout-api
+slo: latency-300ms
+objective: 99
+window: 30d
+description: 99% of checkout-api HTTP requests complete within 300ms over 30 days.
+sli:
+  good: sum(rate(http_request_duration_seconds_bucket{job="checkout-api", le="0.3"}[{{window}}]))
+  total: sum(rate(http_request_duration_seconds_count{job="checkout-api"}[{{window}}]))
+labels:
+  team: payments
+annotations:
+  runbook_url: https://runbooks.example.com/checkout-api/latency

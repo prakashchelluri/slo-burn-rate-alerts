@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      # Includes a check that examples/generated/ matches what the generator produces today.
+      - run: pytest -q
+
+  promtool:
+    runs-on: ubuntu-latest
+    env:
+      PROMETHEUS_VERSION: "3.5.0"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install promtool (checksum-verified official release)
+        run: |
+          tarball="prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz"
+          base="https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}"
+          curl -fsSLO "${base}/${tarball}"
+          curl -fsSL "${base}/sha256sums.txt" | grep " ${tarball}\$" | sha256sum -c -
+          tar -xzf "${tarball}" --strip-components=1 "prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool"
+          ./promtool --version
+      - name: Check generated rule files
+        run: ./promtool check rules examples/generated/*.rules.yaml
+      - name: Unit-test the rules against synthetic traffic
+        run: ./promtool test rules tests/promtool/*.test.yaml

@@ -1,0 +1,13 @@
+# Availability: a request is bad if the server answered 5xx.
+service: checkout-api
+slo: availability
+objective: 99.9
+window: 30d
+description: 99.9% of checkout-api HTTP requests succeed (non-5xx) over 30 days.
+sli:
+  errors: sum(rate(http_requests_total{job="checkout-api", code=~"5.."}[{{window}}]))
+  total: sum(rate(http_requests_total{job="checkout-api"}[{{window}}]))
+labels:
+  team: payments
+annotations:
+  runbook_url: https://runbooks.example.com/checkout-api/availability

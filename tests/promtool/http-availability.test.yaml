@@ -1,0 +1,98 @@
+# promtool unit tests: feed synthetic traffic to the generated rules and check which alerts fire.
+# Run: promtool test rules tests/promtool/*.test.yaml
+rule_files:
+  - ../../examples/generated/http-availability.rules.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy: 0.05% errors, half the 0.1% budget. Nothing should fire.
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="checkout-api", code="200"}'
+        values: '0+5997x240'
+      - series: 'http_requests_total{job="checkout-api", code="500"}'
+        values: '0+3x240'
+    promql_expr_test:
+      - expr: slo:sli_error:ratio_rate1h
+        eval_time: 4h
+        exp_samples:
+          - labels: 'slo:sli_error:ratio_rate1h{service="checkout-api", slo="availability"}'
+            value: 0.0005
+      - expr: count(ALERTS)
+        eval_time: 4h
+        exp_samples: []
+
+  # Outage: 10% errors for 70 minutes, then fully recovered.
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="checkout-api", code="200"}'
+        values: '0+540x120'
+      - series: 'http_requests_total{job="checkout-api", code="500"}'
+        values: '0+60x70 4200x50'
+    promql_expr_test:
+      - expr: slo:sli_error:ratio_rate5m
+        eval_time: 60m
+        exp_samples:
+          - labels: 'slo:sli_error:ratio_rate5m{service="checkout-api", slo="availability"}'
+            value: 0.1
+      # During the outage every burn-rate window is over its threshold.
+      - expr: count by (severity, long_window) (ALERTS{alertname="ErrorBudgetBurn", alertstate="firing"})
+        eval_time: 60m
+        exp_samples:
+          - labels: '{severity="page", long_window="1h"}'
+            value: 1
+          - labels: '{severity="page", long_window="6h"}'
+            value: 1
+          - labels: '{severity="ticket", long_window="1d"}'
+            value: 1
+          - labels: '{severity="ticket", long_window="3d"}'
+            value: 1
+      # 10 minutes after recovery the 5m short window is clean, so the fast page resets
+      # even though the 1h window is still far above 14.4x. Slower windows keep firing.
+      - expr: count by (severity, long_window) (ALERTS{alertname="ErrorBudgetBurn", alertstate="firing"})
+        eval_time: 80m
+        exp_samples:
+          - labels: '{severity="page", long_window="6h"}'
+            value: 1
+          - labels: '{severity="ticket", long_window="1d"}'
+            value: 1
+          - labels: '{severity="ticket", long_window="3d"}'
+            value: 1
+    alert_rule_test:
+      - eval_time: 80m
+        alertname: ErrorBudgetBurn
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              long_window: 6h
+              short_window: 30m
+              service: checkout-api
+              slo: availability
+              team: payments
+            exp_annotations:
+              summary: checkout-api availability SLO is burning error budget at 6x
+              description: Error ratio over 6h and 30m is above 6x the 0.1% budget of the 99.9%/30d SLO. 5% of the budget is spent per 6h at this rate; all of it in 5d.
+              runbook_url: https://runbooks.example.com/checkout-api/availability
+          - exp_labels:
+              severity: ticket
+              long_window: 1d
+              short_window: 2h
+              service: checkout-api
+              slo: availability
+              team: payments
+            exp_annotations:
+              summary: checkout-api availability SLO is burning error budget at 3x
+              description: Error ratio over 1d and 2h is above 3x the 0.1% budget of the 99.9%/30d SLO. 10% of the budget is spent per 1d at this rate; all of it in 10d.
+              runbook_url: https://runbooks.example.com/checkout-api/availability
+          - exp_labels:
+              severity: ticket
+              long_window: 3d
+              short_window: 6h
+              service: checkout-api
+              slo: availability
+              team: payments
+            exp_annotations:
+              summary: checkout-api availability SLO is burning error budget at 1x
+              description: Error ratio over 3d and 6h is above 1x the 0.1% budget of the 99.9%/30d SLO. 10% of the budget is spent per 3d at this rate; all of it in 30d.
+              runbook_url: https://runbooks.example.com/checkout-api/availability
